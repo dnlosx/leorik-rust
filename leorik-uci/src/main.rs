@@ -103,7 +103,7 @@ impl Uci {
             // unofficial commands
             "fen" => write(&self.engine().fen()),
             "hash" => write(&self.engine().board().zobrist_hash.to_string()),
-            "eval" => write(&self.engine().board().eval.score.to_string()),
+            "eval" => write(&self.engine().board().side_to_move_score().to_string()),
             "perft" => match tokens.get(1).map(|d| d.parse::<usize>()) {
                 Some(Ok(depth)) if depth < 10 => write(&self.engine().perft(depth).to_string()),
                 Some(_) => write(&format!("Invalid depth: {}", tokens[1])),

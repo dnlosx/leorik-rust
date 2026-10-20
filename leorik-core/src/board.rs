@@ -110,13 +110,13 @@ impl Board {
     /// NNUE score from the side to move's perspective (internal units).
     #[inline(always)]
     pub fn side_to_move_score(&self) -> i32 {
-        self.eval.score as i32
+        self.eval.score(&self.view()) as i32
     }
 
     /// NNUE score from White's perspective (internal units).
     #[inline(always)]
     pub fn score(&self) -> i32 {
-        self.side_to_move.sign() * self.eval.score as i32
+        self.side_to_move.sign() * self.side_to_move_score()
     }
 
     /// Plays the move and updates the evaluation but not the hash or halfmove clock.

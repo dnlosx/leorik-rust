@@ -26,14 +26,14 @@ fn zobrist_and_eval_match_leorik() {
     // values printed by the original Leorik 3.2 ("hash" and "eval" commands)
     let start = starting_position();
     assert_eq!(start.zobrist_hash, 11826965726486845583);
-    assert_eq!(start.eval.score, 74);
+    assert_eq!(start.side_to_move_score(), 74);
     let mut board = start.clone();
     for uci in ["e2e4", "e7e5", "g1f3"] {
         let mv = move_from_uci(&board, uci, Variant::Standard).unwrap();
         assert!(board.play_move(mv));
     }
     assert_eq!(board.zobrist_hash, 8161745686678069281);
-    assert_eq!(board.eval.score, -77);
+    assert_eq!(board.side_to_move_score(), -77);
 }
 
 #[test]

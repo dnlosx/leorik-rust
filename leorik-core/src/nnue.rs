@@ -9,6 +9,7 @@ use crate::board::PieceView as Board;
 use crate::moves::Move;
 use crate::network::{self, network, INPUT_BUCKET_MAP, INPUT_SIZE, LAYER1_SIZE, QA, QB, SCALE};
 use crate::piece::*;
+use core::cell::Cell;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub struct Bucket {
@@ -27,8 +28,13 @@ pub struct NeuralNetEval {
     pub white: Accumulator,
     pub black_bucket: Bucket,
     pub white_bucket: Bucket,
-    pub score: i16,
+    /// Output of the network for the side to move, computed on first use (see [`NeuralNetEval::score`]).
+    /// `NO_SCORE` means not computed yet. Many positions are never evaluated (TT cutoffs, draws, mate
+    /// distance pruning), so the output layer is only run when the score is actually read.
+    score: Cell<i32>,
 }
+
+const NO_SCORE: i32 = i32::MIN;
 
 impl Default for NeuralNetEval {
     fn default() -> Self {
@@ -145,7 +151,7 @@ impl NeuralNetEval {
             white: Accumulator([0; LAYER1_SIZE]),
             black_bucket: Bucket::default(),
             white_bucket: Bucket::default(),
-            score: 0,
+            score: Cell::new(NO_SCORE),
         }
     }
 
@@ -155,14 +161,14 @@ impl NeuralNetEval {
         self.white.0.copy_from_slice(&other.white.0);
         self.black_bucket = other.black_bucket;
         self.white_bucket = other.white_bucket;
-        self.score = other.score;
+        self.score.set(other.score.get());
     }
 
     /// Rebuilds both accumulators from scratch.
     pub fn update(&mut self, board: &Board) {
         self.rebuild(Color::White, board);
         self.rebuild(Color::Black, board);
-        self.update_score(board);
+        self.score.set(NO_SCORE);
     }
 
     /// Derives this evaluation from `from` (the evaluation before `mv` was played) and the new board.
@@ -182,7 +188,7 @@ impl NeuralNetEval {
             apply_delta(&mut self.black, &from.black, &Delta::from_move(Color::Black, from.black_bucket, mv));
             apply_delta(&mut self.white, &from.white, &Delta::from_move(Color::White, from.white_bucket, mv));
         }
-        self.update_score(new_board);
+        self.score.set(NO_SCORE);
     }
 
     fn rebuild(&mut self, color: Color, board: &Board) {
@@ -204,11 +210,24 @@ impl NeuralNetEval {
         }
     }
 
+    /// The network's output for `board` (which must be the position these accumulators belong to),
+    /// from the side to move's perspective.
     #[inline(always)]
-    fn update_score(&mut self, board: &Board) {
+    pub fn score(&self, board: &Board) -> i16 {
+        let score = self.score.get();
+        if score != NO_SCORE {
+            return score as i16;
+        }
+        let score = self.compute_score(board);
+        self.score.set(score as i32);
+        score
+    }
+
+    #[inline(never)]
+    fn compute_score(&self, board: &Board) -> i16 {
         let piece_count = pop_count(board.white | board.black);
         let output_bucket = network::material_bucket(piece_count);
-        self.score = self.evaluate(board.side_to_move, output_bucket) as i16;
+        self.evaluate(board.side_to_move, output_bucket) as i16
     }
 
     #[inline(always)]
