@@ -138,11 +138,30 @@ Every one of the 200 opening pairs produced the same game with colors swapped
 (`scripts/check-pairs.py`: 200 identical pairs, 0 differing). The port plays exactly the same
 moves as the original.
 
-**Time control 10+0.1:** in progress; results will be added here.
+**Time control 10+0.1** (`scripts/match.sh $CS $RS games=400 tc=10+0.1`), which includes speed:
+
+| Games | Rust W / L / D | Score | Elo | Pentanomial (LL, LD, DD/WL, WD, WW) |
+|---|---|---|---|---|
+| 400 | 125 / 60 / 215 | 58.1 % | +57 ± 21 | [2, 29, 85, 70, 14] |
+
+The Rust port wins here because it is about twice as fast on this machine (see below): with the
+same clock it searches deeper. Other sessions were loading the machine during parts of this match,
+which adds noise to the time-control result, but not to the fixed-node one.
 
 ### 5. Speed
 
-In progress; measured on an otherwise idle machine, results will be added here.
+`scripts/nps.sh ENGINE 16 50 2`: `go depth 16` on 10 bench positions, fresh 50 MB hash, second pass
+(the .NET build needs a warm-up pass for its JIT). Both engines search the same 6,823,079 nodes.
+Measured alternately, three times each, single thread:
+
+| Engine | Nodes per second |
+|---|---|
+| Leorik 3.2, C# on .NET 10 (osx-arm64, `Vector256` runs as two NEON halves) | 0.92 M – 1.19 M |
+| Rust port (NEON) | 1.92 M – 2.50 M |
+
+Other sessions were using the machine at the same time, so treat the absolute numbers as rough.
+The ratio (about 2×) held in every pair of runs. On x86 CPUs the original uses AVX2 and PEXT and
+would be faster than here; that build couldn't be measured on this Mac (no Rosetta).
 
 ### 6. C API and iOS
 
