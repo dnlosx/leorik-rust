@@ -14,6 +14,12 @@ for target in $TARGETS; do
     cargo build --release -p leorik-ffi --lib --target "$target"
 done
 
+# Debug info and local symbols of the Rust standard library make up most of the archive; apps don't need them.
+for target in $TARGETS; do
+    mkdir -p "build/$target"
+    strip -S -x -o "build/$target/libleorik.a" "target/$target/release/libleorik.a"
+done
+
 OUT=build/Leorik.xcframework
 HEADERS=build/headers
 rm -rf "$OUT" "$HEADERS"
@@ -21,8 +27,8 @@ mkdir -p "$HEADERS"
 cp leorik-ffi/include/leorik.h leorik-ffi/include/module.modulemap "$HEADERS/"
 
 xcodebuild -create-xcframework \
-    -library target/aarch64-apple-ios/release/libleorik.a -headers "$HEADERS" \
-    -library target/aarch64-apple-ios-sim/release/libleorik.a -headers "$HEADERS" \
+    -library build/aarch64-apple-ios/libleorik.a -headers "$HEADERS" \
+    -library build/aarch64-apple-ios-sim/libleorik.a -headers "$HEADERS" \
     -output "$OUT"
 
 echo "Built $OUT"
