@@ -207,6 +207,7 @@ impl Uci {
             .name("search".into())
             .stack_size(16 << 20)
             .spawn(move || {
+                raise_thread_priority();
                 let variant = engine.variant();
                 let result = engine.go(&limits, |info| print_info(info, variant));
                 let best = result.best_move.map(|m| move_name(m, variant)).unwrap_or_else(|| "0000".to_string());
@@ -218,6 +219,21 @@ impl Uci {
             })
             .expect("failed to spawn search thread");
         self.searching = Some(handle);
+    }
+}
+
+/// Like Leorik's `ThreadPriority.Highest`: on Apple platforms this keeps the search on performance cores.
+fn raise_thread_priority() {
+    #[cfg(target_vendor = "apple")]
+    {
+        extern "C" {
+            fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+        }
+        const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
+        // SAFETY: plain libSystem call affecting only the current thread
+        unsafe {
+            pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+        }
     }
 }
 
