@@ -73,6 +73,25 @@ int32_t leorik_best_move(LeorikEngine *engine, int32_t time_ms, int32_t depth, c
 int32_t leorik_analyze(LeorikEngine *engine, int32_t time_ms, int32_t depth, LeorikAnalysis *out,
                        LeorikInfoCallback callback, void *user_data);
 
+/* Search limits for leorik_search(). A value <= 0 means "no limit"; at least one limit is required. */
+typedef struct LeorikLimits {
+    int32_t time_ms;
+    int32_t depth;
+    int64_t nodes;
+} LeorikLimits;
+
+/* Like leorik_analyze() with a node limit in addition to time and depth. Node limits make weakened
+ * playing levels independent of the device's speed. */
+int32_t leorik_search(LeorikEngine *engine, const LeorikLimits *limits, LeorikAnalysis *out,
+                      LeorikInfoCallback callback, void *user_data);
+
+/* Leorik's "Temperature" option: every root move gets a random bonus between 0 and temperature
+ * (in Leorik's internal units, about 306 per pawn), drawn once per search, which makes the engine
+ * play varied and weaker moves. 0 (the default) disables it. seed >= 0 makes the bonuses
+ * reproducible (each search with the same seed draws the same bonuses); seed < 0 draws new ones
+ * every search. */
+int32_t leorik_set_temperature(LeorikEngine *engine, int32_t temperature, int32_t seed);
+
 /* Stops a running search on this engine (thread safe, non-blocking). */
 void leorik_stop(LeorikEngine *engine);
 

@@ -78,8 +78,20 @@ unsafe fn opt_str<'a>(p: *const c_char) -> Result<&'a str, i32> {
     CStr::from_ptr(p).to_str().map_err(|_| LEORIK_ERR_ARGUMENT)
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct LeorikLimits {
+    pub time_ms: i32,
+    pub depth: i32,
+    pub nodes: i64,
+}
+
 fn limits(time_ms: i32, depth: i32) -> Option<Limits> {
-    if time_ms <= 0 && depth <= 0 {
+    limits_with_nodes(time_ms, depth, 0)
+}
+
+fn limits_with_nodes(time_ms: i32, depth: i32, nodes: i64) -> Option<Limits> {
+    if time_ms <= 0 && depth <= 0 && nodes <= 0 {
         return None;
     }
     let mut limits = Limits::default();
@@ -88,6 +100,9 @@ fn limits(time_ms: i32, depth: i32) -> Option<Limits> {
     }
     if depth > 0 {
         limits.max_depth = depth.min(leorik_search::MAX_PLY);
+    }
+    if nodes > 0 {
+        limits.max_nodes = nodes;
     }
     Some(limits)
 }
@@ -226,8 +241,46 @@ pub unsafe extern "C" fn leorik_analyze(
     callback: LeorikInfoCallback,
     user_data: *mut c_void,
 ) -> i32 {
-    let (Some(engine), Some(out)) = (engine.as_ref(), out.as_mut()) else { return LEORIK_ERR_ARGUMENT };
     let Some(limits) = limits(time_ms, depth) else { return LEORIK_ERR_ARGUMENT };
+    run_search(engine, limits, out, callback, user_data)
+}
+
+/// # Safety
+/// `engine` must be a valid handle, `limits` must point to a `LeorikLimits`, `out` to a writable `LeorikAnalysis`.
+#[no_mangle]
+pub unsafe extern "C" fn leorik_search(
+    engine: *mut LeorikEngine,
+    limits: *const LeorikLimits,
+    out: *mut LeorikAnalysis,
+    callback: LeorikInfoCallback,
+    user_data: *mut c_void,
+) -> i32 {
+    let Some(l) = limits.as_ref() else { return LEORIK_ERR_ARGUMENT };
+    let Some(limits) = limits_with_nodes(l.time_ms, l.depth, l.nodes) else { return LEORIK_ERR_ARGUMENT };
+    run_search(engine, limits, out, callback, user_data)
+}
+
+/// # Safety
+/// `engine` must be NULL or a valid handle.
+#[no_mangle]
+pub unsafe extern "C" fn leorik_set_temperature(engine: *mut LeorikEngine, temperature: i32, seed: i32) -> i32 {
+    let Some(engine) = engine.as_ref() else { return LEORIK_ERR_ARGUMENT };
+    guard(LEORIK_ERR_INTERNAL, || {
+        let mut e = lock(engine);
+        e.options.temperature = temperature.clamp(0, 10_000);
+        e.options.seed = seed.max(-1);
+        LEORIK_OK
+    })
+}
+
+unsafe fn run_search(
+    engine: *mut LeorikEngine,
+    limits: Limits,
+    out: *mut LeorikAnalysis,
+    callback: LeorikInfoCallback,
+    user_data: *mut c_void,
+) -> i32 {
+    let (Some(engine), Some(out)) = (engine.as_ref(), out.as_mut()) else { return LEORIK_ERR_ARGUMENT };
     guard(LEORIK_ERR_INTERNAL, || {
         let mut e = lock(engine);
         if e.legal_moves().is_empty() {

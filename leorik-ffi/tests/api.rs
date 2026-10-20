@@ -186,3 +186,48 @@ fn multiple_threads() {
     assert_eq!(a.depth, 10);
     assert_eq!(s(&a.best_move).len(), 4);
 }
+
+fn search(e: &Handle, time_ms: i32, depth: i32, nodes: i64) -> (i32, LeorikAnalysis) {
+    let limits = LeorikLimits { time_ms, depth, nodes };
+    let mut out = LeorikAnalysis::default();
+    let rc = unsafe { leorik_search(e.0, &limits, &mut out, None, std::ptr::null_mut()) };
+    (rc, out)
+}
+
+#[test]
+fn node_limit() {
+    let e = Handle(leorik_new(0, 1));
+    let (rc, a) = search(&e, 0, 0, 5000);
+    assert_eq!(rc, LEORIK_OK);
+    // the node limit is checked inside the search, so the last completed iteration stays below it
+    assert!(a.nodes < 5000 && a.depth >= 3, "{} nodes, depth {}", a.nodes, a.depth);
+    let (rc, _) = search(&e, 0, 0, 0);
+    assert_eq!(rc, LEORIK_ERR_ARGUMENT);
+    assert_eq!(unsafe { leorik_search(e.0, std::ptr::null(), &mut LeorikAnalysis::default(), None, std::ptr::null_mut()) }, LEORIK_ERR_ARGUMENT);
+}
+
+#[test]
+fn temperature_varies_moves_and_seed_makes_them_reproducible() {
+    let e = Handle(leorik_new(16, 1));
+    let mut moves = std::collections::HashSet::new();
+    for seed in 0..12 {
+        assert_eq!(unsafe { leorik_set_temperature(e.0, 600, seed) }, LEORIK_OK);
+        unsafe { leorik_new_game(e.0) };
+        let (_, a) = search(&e, 0, 0, 2000);
+        moves.insert(s(&a.best_move));
+    }
+    assert!(moves.len() >= 3, "temperature should vary the opening move: {moves:?}");
+
+    let mut run = |seed| {
+        unsafe { leorik_set_temperature(e.0, 600, seed) };
+        unsafe { leorik_new_game(e.0) };
+        s(&search(&e, 0, 0, 2000).1.best_move)
+    };
+    assert_eq!(run(7), run(7));
+
+    // temperature 0 is the plain engine again
+    unsafe { leorik_set_temperature(e.0, 0, -1) };
+    unsafe { leorik_new_game(e.0) };
+    let (_, a) = search(&e, 0, 6, 0);
+    assert_eq!(s(&a.best_move).len(), 4);
+}
