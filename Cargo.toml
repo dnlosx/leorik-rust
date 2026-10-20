@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["leorik-core", "leorik-search", "leorik-uci", "leorik-ffi"]
+
+[workspace.package]
+version = "3.2.0"
+edition = "2021"
+license = "MIT"
+authors = ["Thomas Jahn (original Leorik)", "Leorik Rust port contributors"]
+repository = "https://github.com/lithander/Leorik"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
+
+[profile.test]
+opt-level = 3

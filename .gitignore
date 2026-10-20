@@ -1,0 +1,7 @@
+/target
+/reference
+/build
+*.xcframework
+/match-results
+.DS_Store
+/config.json

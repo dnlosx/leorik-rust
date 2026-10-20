@@ -1,0 +1,15 @@
+[package]
+name = "leorik-uci"
+description = "UCI command line interface for the Leorik chess engine (Rust port)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "leorik"
+path = "src/main.rs"
+
+[dependencies]
+leorik-core = { path = "../leorik-core" }
+leorik-search = { path = "../leorik-search" }

@@ -1,0 +1,10 @@
+[package]
+name = "leorik-search"
+description = "Search, transposition table and time management of the Leorik chess engine (Rust port)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+leorik-core = { path = "../leorik-core" }

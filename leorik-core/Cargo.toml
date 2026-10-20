@@ -1,0 +1,10 @@
+[package]
+name = "leorik-core"
+description = "Board representation, move generation and NNUE evaluation of the Leorik chess engine (Rust port)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+include = ["src/**", "net/**", "Cargo.toml"]
+
+[dependencies]

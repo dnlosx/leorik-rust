@@ -1,0 +1,15 @@
+[package]
+name = "leorik-ffi"
+description = "C API for the Leorik chess engine (Rust port)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "leorik"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+leorik-core = { path = "../leorik-core" }
+leorik-search = { path = "../leorik-search" }
