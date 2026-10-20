@@ -7,8 +7,9 @@
 use crate::bitboard::{clear_lsb, file, lsb, pop_count};
 use crate::board::PieceView as Board;
 use crate::moves::Move;
-use crate::network::{self, network, INPUT_BUCKET_MAP, INPUT_SIZE, LAYER1_SIZE, QA, QB, SCALE};
+use crate::network::{self, network, INPUT_BUCKETS, INPUT_BUCKET_MAP, INPUT_SIZE, LAYER1_SIZE, QA, QB, SCALE};
 use crate::piece::*;
+use core::cell::{Cell, RefCell};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub struct Bucket {
@@ -27,8 +28,13 @@ pub struct NeuralNetEval {
     pub white: Accumulator,
     pub black_bucket: Bucket,
     pub white_bucket: Bucket,
-    pub score: i16,
+    /// Output of the network for the side to move, computed on first use (see [`NeuralNetEval::score`]).
+    /// `NO_SCORE` means not computed yet. Many positions are never evaluated (TT cutoffs, draws, mate
+    /// distance pruning), so the output layer is only run when the score is actually read.
+    score: Cell<i32>,
 }
+
+const NO_SCORE: i32 = i32::MIN;
 
 impl Default for NeuralNetEval {
     fn default() -> Self {
@@ -145,7 +151,7 @@ impl NeuralNetEval {
             white: Accumulator([0; LAYER1_SIZE]),
             black_bucket: Bucket::default(),
             white_bucket: Bucket::default(),
-            score: 0,
+            score: Cell::new(NO_SCORE),
         }
     }
 
@@ -155,14 +161,14 @@ impl NeuralNetEval {
         self.white.0.copy_from_slice(&other.white.0);
         self.black_bucket = other.black_bucket;
         self.white_bucket = other.white_bucket;
-        self.score = other.score;
+        self.score.set(other.score.get());
     }
 
     /// Rebuilds both accumulators from scratch.
     pub fn update(&mut self, board: &Board) {
         self.rebuild(Color::White, board);
         self.rebuild(Color::Black, board);
-        self.update_score(board);
+        self.score.set(NO_SCORE);
     }
 
     /// Derives this evaluation from `from` (the evaluation before `mv` was played) and the new board.
@@ -171,18 +177,18 @@ impl NeuralNetEval {
         if king_bucket(Color::White, new_board) != from.white_bucket {
             self.black_bucket = from.black_bucket;
             apply_delta(&mut self.black, &from.black, &Delta::from_move(Color::Black, from.black_bucket, mv));
-            self.rebuild(Color::White, new_board);
+            self.refresh(Color::White, new_board);
         } else if king_bucket(Color::Black, new_board) != from.black_bucket {
             self.white_bucket = from.white_bucket;
             apply_delta(&mut self.white, &from.white, &Delta::from_move(Color::White, from.white_bucket, mv));
-            self.rebuild(Color::Black, new_board);
+            self.refresh(Color::Black, new_board);
         } else {
             self.black_bucket = from.black_bucket;
             self.white_bucket = from.white_bucket;
             apply_delta(&mut self.black, &from.black, &Delta::from_move(Color::Black, from.black_bucket, mv));
             apply_delta(&mut self.white, &from.white, &Delta::from_move(Color::White, from.white_bucket, mv));
         }
-        self.update_score(new_board);
+        self.score.set(NO_SCORE);
     }
 
     fn rebuild(&mut self, color: Color, board: &Board) {
@@ -204,11 +210,64 @@ impl NeuralNetEval {
         }
     }
 
+    /// Like `rebuild`, but starts from the accumulator this thread last built for the same perspective and
+    /// king bucket and only applies the pieces that changed since then (a "Finny table"). The accumulator is
+    /// the biases plus the sum of the active features' weights in wrapping 16-bit arithmetic, which doesn't
+    /// depend on the order of additions and subtractions, so the result is identical to `rebuild`.
+    fn refresh(&mut self, color: Color, board: &Board) {
+        let bucket = king_bucket(color, board);
+        let accu = if color == Color::White {
+            self.white_bucket = bucket;
+            &mut self.white
+        } else {
+            self.black_bucket = bucket;
+            &mut self.black
+        };
+        REFRESH_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let perspective = (color == Color::White) as usize;
+            let entry = &mut cache[(perspective * INPUT_BUCKETS + bucket.index as usize) * 2 + bucket.mirrored as usize];
+            let types = [board.pawns, board.knights, board.bishops, board.rooks, board.queens, board.kings];
+            for (c, (side, side_bb)) in [(BLACK, board.black), (WHITE, board.white)].into_iter().enumerate() {
+                for (t, &type_bb) in types.iter().enumerate() {
+                    let piece = side + PAWN * (t as u8 + 1);
+                    let new = side_bb & type_bb;
+                    let old = entry.pieces[c][t];
+                    let mut added = new & !old;
+                    let mut removed = old & !new;
+                    while added != 0 {
+                        add_weights(&mut entry.accu, weights(feature_offset(color, bucket, piece, lsb(added))));
+                        added = clear_lsb(added);
+                    }
+                    while removed != 0 {
+                        sub_weights(&mut entry.accu, weights(feature_offset(color, bucket, piece, lsb(removed))));
+                        removed = clear_lsb(removed);
+                    }
+                    entry.pieces[c][t] = new;
+                }
+            }
+            accu.0.copy_from_slice(&entry.accu.0);
+        });
+    }
+
+    /// The network's output for `board` (which must be the position these accumulators belong to),
+    /// from the side to move's perspective.
     #[inline(always)]
-    fn update_score(&mut self, board: &Board) {
+    pub fn score(&self, board: &Board) -> i16 {
+        let score = self.score.get();
+        if score != NO_SCORE {
+            return score as i16;
+        }
+        let score = self.compute_score(board);
+        self.score.set(score as i32);
+        score
+    }
+
+    #[inline(never)]
+    fn compute_score(&self, board: &Board) -> i16 {
         let piece_count = pop_count(board.white | board.black);
         let output_bucket = network::material_bucket(piece_count);
-        self.score = self.evaluate(board.side_to_move, output_bucket) as i16;
+        self.evaluate(board.side_to_move, output_bucket) as i16
     }
 
     #[inline(always)]
@@ -225,6 +284,21 @@ impl NeuralNetEval {
         output = output.wrapping_add(net.output_biases[output_bucket] as i32);
         output.wrapping_mul(SCALE) / (QA * QB)
     }
+}
+
+/// A cached accumulator and the pieces (by color and type) it was built from.
+struct RefreshEntry {
+    accu: Accumulator,
+    pieces: [[u64; 6]; 2],
+}
+
+thread_local! {
+    /// One entry per perspective, king bucket and mirroring; each starts as the empty board (just the biases).
+    static REFRESH_CACHE: RefCell<Box<[RefreshEntry]>> = RefCell::new(
+        (0..2 * INPUT_BUCKETS * 2)
+            .map(|_| RefreshEntry { accu: Accumulator(network().feature_biases), pieces: [[0; 6]; 2] })
+            .collect(),
+    );
 }
 
 #[inline(always)]

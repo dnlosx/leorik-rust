@@ -26,14 +26,14 @@ fn zobrist_and_eval_match_leorik() {
     // values printed by the original Leorik 3.2 ("hash" and "eval" commands)
     let start = starting_position();
     assert_eq!(start.zobrist_hash, 11826965726486845583);
-    assert_eq!(start.eval.score, 74);
+    assert_eq!(start.side_to_move_score(), 74);
     let mut board = start.clone();
     for uci in ["e2e4", "e7e5", "g1f3"] {
         let mv = move_from_uci(&board, uci, Variant::Standard).unwrap();
         assert!(board.play_move(mv));
     }
     assert_eq!(board.zobrist_hash, 8161745686678069281);
-    assert_eq!(board.eval.score, -77);
+    assert_eq!(board.side_to_move_score(), -77);
 }
 
 #[test]
@@ -91,4 +91,39 @@ fn perft_suites_full() {
         checked += 1;
     }
     println!("checked {checked} perft positions");
+}
+
+#[test]
+fn incremental_eval_matches_full_rebuild() {
+    // Random games: the incrementally updated accumulators (incl. king bucket refreshes from the per-thread
+    // cache) and the lazily computed score must equal a rebuild from scratch after every move.
+    use leorik_core::movegen::legal_moves;
+    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+    for fen in [
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+    ] {
+        for _ in 0..50 {
+            let mut board = board_from_fen(fen).unwrap();
+            for _ in 0..120 {
+                let moves = legal_moves(&board);
+                if moves.is_empty() {
+                    break;
+                }
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                let mv = moves[(x % moves.len() as u64) as usize];
+                let from = board.clone();
+                assert!(board.play(&from, mv));
+                let mut full = board.clone();
+                full.update_eval();
+                assert_eq!(board.eval.white.0, full.eval.white.0);
+                assert_eq!(board.eval.black.0, full.eval.black.0);
+                assert_eq!(board.side_to_move_score(), full.side_to_move_score());
+            }
+        }
+    }
 }

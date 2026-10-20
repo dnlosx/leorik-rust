@@ -152,16 +152,35 @@ which adds noise to the time-control result, but not to the fixed-node one.
 
 `scripts/nps.sh ENGINE 16 50 2`: `go depth 16` on 10 bench positions, fresh 50 MB hash, second pass
 (the .NET build needs a warm-up pass for its JIT). Both engines search the same 6,823,079 nodes.
-Measured alternately, three times each, single thread:
+Measured alternately, three times each, single thread (load average 3.4–3.7 on 10 cores):
 
 | Engine | Nodes per second |
 |---|---|
-| Leorik 3.2, C# on .NET 10 (osx-arm64, `Vector256` runs as two NEON halves) | 0.92 M – 1.19 M |
-| Rust port (NEON) | 1.92 M – 2.50 M |
+| Leorik 3.2, C# on .NET 10 (osx-arm64, `Vector256` runs as two NEON halves) | 1.51 M – 1.57 M |
+| Rust port, faithful translation (commit f18ea1a) | 3.08 M – 3.18 M |
+| Rust port with the speedups below | 3.42 M – 3.50 M |
 
-Other sessions were using the machine at the same time, so treat the absolute numbers as rough.
-The ratio (about 2×) held in every pair of runs. On x86 CPUs the original uses AVX2 and PEXT and
-would be faster than here; that build couldn't be measured on this Mac (no Rosetta).
+Other sessions were using the machine at the same time, so treat the absolute numbers as rough
+(earlier runs under heavier load gave 0.92–1.19 M for C# and 1.92–2.50 M for the port). The ratio
+held in every set of runs. On x86 CPUs the original uses AVX2 and PEXT and would be faster than
+here; that build couldn't be measured on this Mac (no Rosetta).
+
+Speedups that keep the search tree identical (same node counts and PVs as the original; parity
+`ALL EQUAL`). Wall-clock nps on a shared machine varies by ±30%, so each change was measured by the
+CPU cycles of the whole `nps.sh` run (`/usr/bin/time -l`, reproducible to ±0.3%):
+
+| Change | Cycles | vs. previous |
+|---|---|---|
+| Faithful translation | 14.73 G | |
+| NNUE output layer computed lazily, on the first read of the score | 14.57 G | −1.1 % |
+| King-bucket refresh from a per-thread accumulator cache ("Finny tables") | 13.66 G | −6.2 % |
+| Slider attacks from magic bitboard tables instead of the Classic subset method | 13.49 G | −1.2 % |
+
+In total about 9% fewer cycles (11–14% more nps in alternating runs); perft alone is about 13%
+faster with the magic tables. Profile-guided optimization (trained on the 200 positions of
+`testdata/openings.epd` at depth 12 and 14, merged with rustc's own `llvm-profdata` from
+`rustup component add llvm-tools`) was tried and not adopted: 1% fewer instructions, but no
+measurable change in cycles or nps (best of 6 alternating runs within 1% either way).
 
 ### 6. C API and iOS
 
@@ -179,8 +198,13 @@ would be faster than here; that build couldn't be measured on this Mac (no Roset
 Behavior-preserving changes (none of them changes the search tree):
 
 - The network is embedded in the binary instead of being loaded from a file next to the executable.
-- Only the "Classic" slider attack generator is ported (the original picks PEXT on x86 CPUs with
-  BMI2 and Classic elsewhere; both produce the same attack sets).
+- Slider attacks come from magic bitboard tables generated at build time (`leorik-core/build.rs`)
+  instead of the original's PEXT (x86 with BMI2) or "Classic" subset method (elsewhere). All three
+  produce the same attack sets; the Classic method is kept and tested exhaustively against the tables.
+- The NNUE output layer runs on the first read of a position's score instead of after every move,
+  and king-bucket changes refresh the accumulator from a per-thread cache of the last accumulator
+  built for that bucket instead of from scratch. Both give identical values (wrapping 16-bit sums
+  don't depend on the order of additions).
 - The transposition table is an instance owned by the engine instead of a static global, so
   several engines can coexist in one process.
 - A move taken from the transposition table is sanity-checked against the position before use.
