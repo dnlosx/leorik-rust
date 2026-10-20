@@ -45,11 +45,11 @@ cargo test --release             # unit tests incl. perft, eval/hash checks, C A
 scripts/test-c-api.sh            # compiles and runs a C program against libleorik.a
 ```
 
-iOS (device and Apple-silicon simulator):
+iOS (devices, the simulator on Apple-silicon and Intel Macs) and macOS (Apple silicon, for `swift test`):
 
 ```bash
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-scripts/build-xcframework.sh     # -> build/Leorik.xcframework (headers + module map "Leorik")
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin
+scripts/build-xcframework.sh     # -> build/Leorik.xcframework (headers + module map "Leorik", stripped)
 scripts/test-ios-sim.sh          # runs the C API test inside a booted iOS simulator
 ```
 

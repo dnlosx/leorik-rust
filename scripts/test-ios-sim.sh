@@ -10,5 +10,5 @@ SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 mkdir -p target/c-test
 xcrun --sdk iphonesimulator clang -target arm64-apple-ios15.0-simulator -isysroot "$SDK" \
     -I leorik-ffi/include leorik-ffi/tests/c/test_api.c \
-    build/Leorik.xcframework/ios-arm64-simulator/libleorik.a -o target/c-test/test_api_sim
+    build/Leorik.xcframework/ios-arm64_x86_64-simulator/libleorik.a -o target/c-test/test_api_sim
 xcrun simctl spawn "$DEVICE" "$PWD/target/c-test/test_api_sim"
