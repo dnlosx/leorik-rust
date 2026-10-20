@@ -177,9 +177,10 @@ CPU cycles of the whole `nps.sh` run (`/usr/bin/time -l`, reproducible to ±0.3%
 | Slider attacks from magic bitboard tables instead of the Classic subset method | 13.49 G | −1.2 % |
 
 In total about 9% fewer cycles (11–14% more nps in alternating runs); perft alone is about 13%
-faster with the magic tables. Profile-guided optimization was not added: it needs `llvm-profdata`
-from the same LLVM as rustc (`rustup component add llvm-tools`); Xcode's (LLVM 21) can't read
-rustc 1.99's profiles.
+faster with the magic tables. Profile-guided optimization (trained on the 200 positions of
+`testdata/openings.epd` at depth 12 and 14, merged with rustc's own `llvm-profdata` from
+`rustup component add llvm-tools`) was tried and not adopted: 1% fewer instructions, but no
+measurable change in cycles or nps (best of 6 alternating runs within 1% either way).
 
 ### 6. C API and iOS
 
