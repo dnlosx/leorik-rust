@@ -1,15 +1,17 @@
 #!/bin/sh
 # Builds libleorik.a for iOS devices (aarch64-apple-ios), the simulator (aarch64-apple-ios-sim and
 # x86_64-apple-ios, merged into one library) and Apple-silicon Macs (aarch64-apple-darwin, so Swift packages using it can
-# run `swift test` on a Mac) and packages them into build/Leorik.xcframework.
+# run `swift test` on a Mac) and Mac Catalyst (aarch64-apple-ios-macabi and x86_64-apple-ios-macabi, merged, for the
+# app's Mac version) and packages them into build/Leorik.xcframework.
 #
-#   rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin
+#   rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin \
+#       aarch64-apple-ios-macabi x86_64-apple-ios-macabi
 #   scripts/build-xcframework.sh
 set -eu
 cd "$(dirname "$0")/.."
 
 export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
-TARGETS="aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin"
+TARGETS="aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin aarch64-apple-ios-macabi x86_64-apple-ios-macabi"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
 for target in $TARGETS; do
@@ -25,6 +27,9 @@ done
 # one simulator library for both architectures
 mkdir -p build/ios-simulator
 lipo -create build/aarch64-apple-ios-sim/libleorik.a build/x86_64-apple-ios/libleorik.a -output build/ios-simulator/libleorik.a
+# and one Mac Catalyst library
+mkdir -p build/ios-maccatalyst
+lipo -create build/aarch64-apple-ios-macabi/libleorik.a build/x86_64-apple-ios-macabi/libleorik.a -output build/ios-maccatalyst/libleorik.a
 
 OUT=build/Leorik.xcframework
 HEADERS=build/headers
@@ -36,6 +41,7 @@ xcodebuild -create-xcframework \
     -library build/aarch64-apple-ios/libleorik.a -headers "$HEADERS" \
     -library build/ios-simulator/libleorik.a -headers "$HEADERS" \
     -library build/aarch64-apple-darwin/libleorik.a -headers "$HEADERS" \
+    -library build/ios-maccatalyst/libleorik.a -headers "$HEADERS" \
     -output "$OUT"
 
 echo "Built $OUT"
