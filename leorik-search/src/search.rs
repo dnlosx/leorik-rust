@@ -252,8 +252,10 @@ impl IterativeSearch {
             // moves after the PV move are searched with a null window and, if non-tactical, with reduced depth
             let r = if mv.captured_piece() != NONE || self.positions[1].in_check() { 0 } else { 2 };
             let mut score = alpha;
-            if i == first_move || self.evaluate_next(0, depth - r, alpha - bonus, alpha + 1 - bonus, 0) + bonus > alpha {
-                score = self.evaluate_next(0, depth, alpha - bonus, beta - bonus, 0) + bonus;
+            if i == first_move
+                || with_bonus(self.evaluate_next(0, depth - r, alpha - bonus, alpha + 1 - bonus, 0), bonus) > alpha
+            {
+                score = with_bonus(self.evaluate_next(0, depth, alpha - bonus, beta - bonus, 0), bonus);
             }
 
             self.total_nodes += self.nodes_visited - pre_nodes;
@@ -747,6 +749,17 @@ fn is_plausible(board: &Board, mv: Move) -> bool {
         return mv.target == NONE && (board.en_passant >> mv.to) & 1 == 1;
     }
     (mv.target & TYPE_MASK) != KING && board.get_piece(mv.to as usize) == mv.target
+}
+
+/// A root move's score with its random bonus. Mates get no bonus, and the result stays inside the mate scores:
+/// a mate in one plus a bonus reached `SCORE_BOUNDS`, so the depth-1 search (full window, which neither the node
+/// limit nor `stop` can abort) failed high forever and never returned.
+#[inline(always)]
+fn with_bonus(score: i32, bonus: i32) -> i32 {
+    if bonus == 0 || is_checkmate(score) {
+        return score;
+    }
+    (score + bonus).clamp(-CHECKMATE_SCORE, CHECKMATE_SCORE)
 }
 
 fn random_seed() -> i32 {

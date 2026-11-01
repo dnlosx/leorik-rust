@@ -29,6 +29,20 @@ fn finds_scholars_mate() {
     assert_eq!(last, Some(Score::Mate(1)));
 }
 
+/// A mate in one plus a random root bonus used to reach the score bounds, and the depth-1 search, which nothing
+/// aborts, never returned (Duo Chess level 4 hung on this position).
+#[test]
+fn temperature_still_plays_mate_in_one() {
+    for (temperature, seed) in [(1000, 1), (1000, 7), (450, 3), (60, 5)] {
+        let mut engine = Engine::new(1);
+        engine.options.temperature = temperature;
+        engine.options.seed = seed;
+        engine.set_fen("2Qq1bk1/2R2p2/6p1/7p/5PPP/1P4K1/3r4/8 b - - 4 60").unwrap();
+        let result = engine.go(&Limits::nodes(150), |_| {});
+        assert_eq!(move_name(result.best_move.unwrap(), Variant::Standard), "d8d3");
+    }
+}
+
 #[test]
 fn stalemate_and_checkmate_have_no_best_move() {
     let mut engine = Engine::new(1);
